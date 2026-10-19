@@ -162,7 +162,7 @@ interface TypeNode {
 | UnityRole | 판정 규칙 | 색상 |
 |---|---|---|
 | `MonoBehaviour` | 체인에 `MonoBehaviour` | 파랑 |
-| `NetworkBehaviour` | 체인에 `NetworkBehaviour` (Netcode for GameObjects) | 남색 |
+| `NetworkBehaviour` | 체인에 `NetworkBehaviour` (Netcode for GameObjects) | 주황 |
 | `ScriptableObject` | 체인에 `ScriptableObject` | 초록 |
 | `EditorScript` | `Editor/` 폴더 또는 `UnityEditor` 상속 (`Editor`, `EditorWindow`, `PropertyDrawer`) | 회색 |
 | `Singleton/Manager` | 위 역할 + (`static Instance` 보유 또는 `Singleton<T>` 상속 또는 이름이 `*Manager`) | 빨강 테두리 (다른 역할과 **중첩** 표시) |

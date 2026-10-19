@@ -11,6 +11,7 @@ interface Palette {
   moduleBorder: string;
   collapsedFill: string;
   focus: string;
+  incoming: string;
   role: Record<UnityRole, { fill: string; border: string }>;
   ui: { fill: string; border: string };
   singleton: string;
@@ -28,10 +29,11 @@ export const PALETTES: Record<"light" | "dark", Palette> = {
     moduleFill: "#eef1f6",
     moduleBorder: "#c7cedb",
     collapsedFill: "#e3e8f1",
-    focus: "#ff9f1a",
+    focus: "#00b4d8",
+    incoming: "#d6336c",
     role: {
       MonoBehaviour: { fill: "#dbe8ff", border: "#4a7bd0" },
-      NetworkBehaviour: { fill: "#d6dcf5", border: "#2b3f8f" },
+      NetworkBehaviour: { fill: "#ffcc94", border: "#e8740c" },
       ScriptableObject: { fill: "#d9f2e3", border: "#2f9a5c" },
       EditorScript: { fill: "#e6e6e6", border: "#8c8c8c" },
       Interface: { fill: "#ffffff", border: "#6b7385" },
@@ -53,10 +55,11 @@ export const PALETTES: Record<"light" | "dark", Palette> = {
     moduleFill: "#1b2029",
     moduleBorder: "#363e4d",
     collapsedFill: "#232a36",
-    focus: "#ffb347",
+    focus: "#3fd0f0",
+    incoming: "#ff6b9d",
     role: {
       MonoBehaviour: { fill: "#1f3354", border: "#6f9ce8" },
-      NetworkBehaviour: { fill: "#232a52", border: "#8796e0" },
+      NetworkBehaviour: { fill: "#7a3a00", border: "#ff9a3c" },
       ScriptableObject: { fill: "#1c3a2a", border: "#5cc48a" },
       EditorScript: { fill: "#2c2c2c", border: "#8c8c8c" },
       Interface: { fill: "#1b2029", border: "#99a2b4" },
@@ -145,6 +148,26 @@ export function buildStyles(theme: "light" | "dark"): StylesheetJson {
         "border-style": "double",
       },
     },
+    {
+      // 관련 묶음 상자: 눈에 덜 띄게
+      selector: "node.group",
+      style: {
+        shape: "round-rectangle",
+        "background-color": p.moduleFill,
+        "background-opacity": 0.35,
+        "border-width": 1,
+        "border-style": "dashed",
+        "border-color": p.moduleBorder,
+        label: "data(label)",
+        color: p.muted,
+        "font-size": 10,
+        "font-weight": "normal",
+        "text-valign": "top",
+        "text-halign": "center",
+        "text-margin-y": -2,
+        padding: "14px",
+      },
+    },
     { selector: "node:selected", style: { "border-color": p.focus, "border-width": 3.5 } },
 
     {
@@ -184,6 +207,16 @@ export function buildStyles(theme: "light" | "dark"): StylesheetJson {
       style: { width: "data(width)", "curve-style": "bezier", opacity: 0.6, "font-size": 9, "text-rotation": "none" },
     },
     { selector: "edge.agg-inherit", style: { "target-arrow-shape": "triangle", "target-arrow-fill": "hollow" } },
+    // 선택한 노드와 연결된 화살표: 나가는 것(하늘색) / 들어오는 것(분홍색), 나머지는 흐리게
+    { selector: "edge.sel-fade", style: { opacity: 0.18 } },
+    {
+      selector: "edge.sel-out",
+      style: { "line-color": p.focus, "target-arrow-color": p.focus, "source-arrow-color": p.focus, width: 2.6, opacity: 1, "z-index": 15, color: p.text },
+    },
+    {
+      selector: "edge.sel-in",
+      style: { "line-color": p.incoming, "target-arrow-color": p.incoming, "source-arrow-color": p.incoming, width: 2.6, opacity: 1, "z-index": 15, color: p.text },
+    },
     { selector: "edge:selected", style: { "line-color": p.focus, "target-arrow-color": p.focus, "source-arrow-color": p.focus, width: 3, opacity: 1 } },
 
     // 해설 하이라이트 (SPEC 7.5)

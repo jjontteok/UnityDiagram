@@ -5,7 +5,7 @@ import fcose from "cytoscape-fcose";
 import svg from "cytoscape-svg";
 import { buildElements, type BuildResult } from "../diagram/elements";
 import { buildStyles, PALETTES } from "../diagram/styles";
-import { layoutFor } from "../diagram/layouts";
+import { layoutFor, removeOverlaps } from "../diagram/layouts";
 import { playFlow } from "../diagram/flowAnimation";
 import { currentStep, EDGE_LABEL, modulesOf, useStore, writeLocal } from "../state/store";
 import type { Edge } from "../types";
@@ -44,8 +44,6 @@ export const diagram = {
   },
 };
 
-const DETAIL_ZOOM = 1.2;
-
 export function DiagramCanvas() {
   const ref = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
@@ -65,26 +63,42 @@ export function DiagramCanvas() {
   const selection = useStore((s) => s.selection);
   const step = useStore(currentStep);
   const narrationActive = useStore((s) => s.narrationActive);
+  const detailAlways = useStore((s) => s.detailAlways);
+  const toggleDetailAlways = useStore((s) => s.toggleDetailAlways);
+  // 지금 상세(멤버 목록) 라벨이 적용되어 있는지
+  const detailOnRef = useRef(false);
 
   const modules = useMemo(() => modulesOf(graph, moduleRule), [graph, moduleRule]);
   const edgeById = useMemo(() => new Map<string, Edge>(graph.edges.map((e) => [e.id, e])), [graph]);
   const nodeById = useStore((s) => s.nodeById);
 
   const viewKey = useMemo(
-    () => [viewMode, moduleRule, [...expanded].sort().join("|"), viewMode === "neighbor" ? `${neighborRoot}:${hops}` : "", Object.entries(roleFilter).filter(([, v]) => !v).map(([k]) => k).join(",")].join("#"),
-    [viewMode, moduleRule, expanded, neighborRoot, hops, roleFilter],
+    () =>
+      [
+        viewMode,
+        moduleRule,
+        [...expanded].sort().join("|"),
+        viewMode === "neighbor" ? `${neighborRoot}:${hops}` : "",
+        Object.entries(roleFilter).filter(([, v]) => !v).map(([k]) => k).join(","),
+        detailAlways ? "detail" : "",
+      ].join("#"),
+    [viewMode, moduleRule, expanded, neighborRoot, hops, roleFilter, detailAlways],
   );
-  const posKey = `pos:${graph.projectRoot}:${viewKey}`;
+  // 배치 방식이 바뀌면 예전에 저장한 위치를 쓰지 않도록 버전 표시
+  const posKey = `pos2:${graph.projectRoot}:${viewKey}`;
 
   // ───── 초기화 ─────
   useEffect(() => {
     const cy = cytoscape({
       container: ref.current!,
       style: buildStyles(useStore.getState().theme),
-      wheelSensitivity: 1,
       minZoom: 0.05,
       maxZoom: 4,
       boxSelectionEnabled: false,
+      // 화면 이동은 왼쪽 드래그 대신 가운데(휠) 버튼 드래그로 (아래 직접 처리).
+      // Cytoscape 는 이동을 끄면 휠 확대도 꺼지므로 휠 확대도 직접 처리한다
+      userPanningEnabled: false,
+      userZoomingEnabled: false,
     });
     cyRef.current = cy;
     diagram.cy = cy;
@@ -105,14 +119,46 @@ export function DiagramCanvas() {
     cy.on("tap", (e) => {
       if (e.target === cy) st().select(null);
     });
-    let detail = false;
-    cy.on("zoom", () => {
-      const d = cy.zoom() > DETAIL_ZOOM;
-      if (d === detail) return;
-      detail = d;
-      cy.batch(() => (d ? cy.nodes(".cls").addClass("detail") : cy.nodes(".cls").removeClass("detail")));
-    });
+    // 가운데 버튼 드래그로 화면 이동
+    const el = ref.current!;
+    let last: { x: number; y: number } | null = null;
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 1) return;
+      e.preventDefault(); // Windows 자동 스크롤 아이콘 방지
+      last = { x: e.clientX, y: e.clientY };
+      el.style.cursor = "grabbing";
+    };
+    const onMove = (e: MouseEvent) => {
+      if (!last) return;
+      cy.panBy({ x: e.clientX - last.x, y: e.clientY - last.y });
+      last = { x: e.clientX, y: e.clientY };
+    };
+    const onUp = (e: MouseEvent) => {
+      if (e.button !== 1 || !last) return;
+      last = null;
+      el.style.cursor = "";
+    };
+    const noAutoScroll = (e: MouseEvent) => e.button === 1 && e.preventDefault();
+    // 휠 확대/축소: 마우스 위치 기준, 한 칸(100px)에 약 1.25배
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const px = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;
+      const level = Math.max(cy.minZoom(), Math.min(cy.maxZoom(), cy.zoom() * Math.pow(1.25, -px / 100)));
+      const rect = el.getBoundingClientRect();
+      cy.zoom({ level, renderedPosition: { x: e.clientX - rect.left, y: e.clientY - rect.top } });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("mousedown", onDown);
+    el.addEventListener("auxclick", noAutoScroll);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+
     return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("mousedown", onDown);
+      el.removeEventListener("auxclick", noAutoScroll);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
       cy.destroy();
       cyRef.current = null;
       diagram.cy = null;
@@ -169,7 +215,10 @@ export function DiagramCanvas() {
     cy.batch(() => {
       cy.elements().remove();
       cy.add(build.elements);
-      if (cy.zoom() > DETAIL_ZOOM) cy.nodes(".cls").addClass("detail");
+      // 상세 표시가 켜져 있으면 커진 상자 크기로 배치되도록 레이아웃 전에 적용
+      // 상세(멤버 목록)는 ☰ 버튼을 켰을 때만 — 확대해도 자동으로 바뀌지 않음
+      detailOnRef.current = detailAlways;
+      if (detailOnRef.current) cy.nodes(".cls").addClass("detail");
     });
     const leaves = cy.nodes().filter((n) => n.isChildless());
     const usePreset = !!saved && leaves.length > 0 && leaves.toArray().every((n) => !!saved[n.id()]);
@@ -182,10 +231,14 @@ export function DiagramCanvas() {
     };
     const layout = usePreset
       ? cy.layout({ name: "preset", positions: (n: any) => saved![n.id()], fit: true, padding: 40 } as any)
-      : cy.layout(layoutFor(viewMode, build.visibleNodeCount, true));
+      : // 매니저·상수·enum 으로의 연결(layout-ignore)은 그대로 그리되 배치 계산에서는 뺀다
+        cy.elements().not("edge.layout-ignore").layout(layoutFor(viewMode, build.visibleNodeCount, true, detailOnRef.current));
     const started = performance.now();
     layout.one("layoutstop", () => {
-      if (!usePreset) savePositions();
+      if (!usePreset) {
+        removeOverlaps(cy);
+        savePositions();
+      }
       setLayoutVersion((v) => v + 1);
       // 디버깅/E2E 점검용 레이아웃 시간
       const w = window as unknown as { __layoutMs: number; __layoutDone: number };
@@ -198,16 +251,27 @@ export function DiagramCanvas() {
       layout.stop();
       cy.off("dragfree", "node", savePositions);
     };
-  }, [graph, modules, viewMode, expanded, roleFilter, edgeFilter, neighborRoot, hops, posKey]);
+  }, [graph, modules, viewMode, expanded, roleFilter, edgeFilter, neighborRoot, hops, posKey, detailAlways]);
 
   // ───── 선택 동기화 ─────
   useEffect(() => {
     const cy = cyRef.current!;
     cy.$(":selected").unselect();
+    cy.edges(".sel-out, .sel-in, .sel-fade").removeClass("sel-out sel-in sel-fade");
     if (!selection) return;
     const b = buildRef.current;
     const id = selection.kind === "node" ? b?.repOf.get(selection.id) ?? selection.id : selection.kind === "edge" ? b?.edgeRepOf.get(selection.id) ?? selection.id : selection.id;
-    cy.getElementById(id).select();
+    const el = cy.getElementById(id);
+    el.select();
+    // 선택한 것과 연결된 화살표 색: 나가는 것(사용하는 것) / 들어오는 것(사용되는 것)
+    if (el.isNode()) {
+      const inner = el.union(el.descendants());
+      // 펼친 모듈을 선택했으면 모듈 안끼리의 연결은 제외
+      inner.outgoers().edges().filter((e) => !inner.contains(e.target())).addClass("sel-out");
+      inner.incomers().edges().filter((e) => !inner.contains(e.source())).addClass("sel-in");
+      // 나머지 화살표는 흐리게 해서 연결된 것이 잘 보이도록
+      cy.edges().not(".sel-out, .sel-in").addClass("sel-fade");
+    }
   }, [selection, layoutVersion]);
 
   // ───── 해설 단계 → 필요한 모듈 펼치기 ─────
@@ -314,9 +378,17 @@ export function DiagramCanvas() {
         <button className="btn icon" onClick={() => diagram.zoomBy(1.6)} title="확대">＋</button>
         <button className="btn icon" onClick={() => diagram.zoomBy(1 / 1.6)} title="축소">−</button>
         <button className="btn icon" onClick={() => diagram.fit()} title="전체 보기">⤢</button>
+        <button
+          className={`btn icon ${detailAlways ? "on" : ""}`}
+          onClick={toggleDetailAlways}
+          title={detailAlways ? "상세 표시 끄기 (클래스 이름만 표시)" : "상세 표시 켜기 (필드·메서드 표시)"}
+          aria-pressed={detailAlways}
+        >
+          ☰
+        </button>
       </div>
       <div className="diagram-hint">
-        {viewMode === "module" ? "모듈을 더블클릭하면 펼쳐집니다 · 클래스를 더블클릭하면 주변 보기" : viewMode === "neighbor" ? "선택한 클래스 주변 N단계" : ""}
+        {viewMode === "module" ? "모듈을 더블클릭하면 펼쳐집니다 · 클래스를 더블클릭하면 주변 보기 · 휠 버튼 드래그로 화면 이동" : viewMode === "neighbor" ? "선택한 클래스 주변 N단계 · 휠 버튼 드래그로 화면 이동" : "휠 버튼 드래그로 화면 이동"}
       </div>
     </div>
   );
@@ -347,6 +419,8 @@ function Legend() {
           <div className="legend-row"><span className="ln subscribes" />event 구독 (보라 점선)</div>
           <div className="legend-row"><span className="ln creates" />new / Instantiate (초록)</div>
           <div className="legend-row"><span className="ln colocated" />같은 GameObject (이중선)</div>
+          <div className="legend-row"><span className="ln sel-out" />선택한 것이 사용하는 것 →</div>
+          <div className="legend-row"><span className="ln sel-in" />← 선택한 것을 사용하는 곳</div>
           <div className="legend-row">🌐 네트워크 · ⭐ 싱글톤 · 📦 프리팹 사용 · 🔁 순환 참조</div>
         </div>
       )}

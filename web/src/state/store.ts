@@ -81,6 +81,8 @@ interface State {
   code: { filePath: string; line: number } | null;
   theme: "light" | "dark";
   toast: { text: string; kind: "info" | "warn" | "error" } | null;
+  /** 확대하지 않아도 모든 클래스의 멤버 목록을 보여줄지 */
+  detailAlways: boolean;
 
   loadGraph(g: ProjectGraph): void;
   closeProject(): void;
@@ -104,6 +106,7 @@ interface State {
   openCode(filePath: string, line: number): void;
   closeCode(): void;
   toggleTheme(): void;
+  toggleDetailAlways(): void;
   showToast(text: string, kind?: "info" | "warn" | "error"): void;
 }
 
@@ -132,6 +135,7 @@ export const useStore = create<State>((set, get) => ({
   code: null,
   theme: readLocal<"light" | "dark">("theme", matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
   toast: null,
+  detailAlways: readLocal("detailAlways", false),
 
 
   loadGraph: (g) => {
@@ -299,6 +303,11 @@ export const useStore = create<State>((set, get) => ({
   stopGuide: () => guideAbort?.abort(),
   openCode: (filePath, line) => set({ code: { filePath, line } }),
   closeCode: () => set({ code: null }),
+  toggleDetailAlways: () => {
+    const v = !get().detailAlways;
+    writeLocal("detailAlways", v);
+    set({ detailAlways: v });
+  },
   toggleTheme: () => {
     const t = get().theme === "dark" ? "light" : "dark";
     writeLocal("theme", t);

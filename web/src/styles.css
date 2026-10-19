@@ -7,7 +7,8 @@
   --muted: #6b7385;
   --accent: #3b6fd8;
   --accent-text: #ffffff;
-  --focus: #ff9f1a;
+  --focus: #00b4d8;
+  --incoming: #d6336c;
   --warn-bg: #fff6e0;
   --warn-border: #f0c36d;
   --error-bg: #fdecec;
@@ -16,7 +17,7 @@
   --shadow: 0 6px 24px rgba(20, 30, 50, 0.12);
 
   --r-MonoBehaviour: #4a7bd0;
-  --r-NetworkBehaviour: #2b3f8f;
+  --r-NetworkBehaviour: #e8740c;
   --r-ScriptableObject: #2f9a5c;
   --r-EditorScript: #8c8c8c;
   --r-Interface: #6b7385;
@@ -42,7 +43,9 @@
   --code-bg: #12151b;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
   --r-MonoBehaviour: #6f9ce8;
-  --r-NetworkBehaviour: #8796e0;
+  --r-NetworkBehaviour: #ff9a3c;
+  --focus: #3fd0f0;
+  --incoming: #ff6b9d;
   --r-ScriptableObject: #5cc48a;
   --r-Data: #d9b440;
   --r-Enum: #7d8697;
@@ -251,6 +254,7 @@ textarea.input { width: 100%; resize: vertical; font-size: 12px; }
 .diagram-hint { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--muted); pointer-events: none; }
 .zoom-controls { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }
 .zoom-controls .btn { width: 36px; height: 36px; padding: 0; font-size: 18px; background: var(--panel); }
+.zoom-controls .btn.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .tooltip {
   position: absolute;
   max-width: 460px;
@@ -287,6 +291,11 @@ textarea.input { width: 100%; resize: vertical; font-size: 12px; }
 .ln.singleton { border-top: 2px dashed var(--r-singleton); }
 .ln.subscribes { border-top: 2px dotted var(--r-ui); }
 .ln.creates { border-top: 2px dashed var(--r-ScriptableObject); }
+.ln.sel-out { border-top: 3px solid var(--focus); }
+.ln.sel-in { border-top: 3px solid var(--incoming); }
+.help-color { font-weight: 700; }
+.help-color.out { color: var(--focus); }
+.help-color.in { color: var(--incoming); }
 .ln.colocated { border-top: 4px double var(--muted); }
 .ln.inherits::after, .ln.implements::after { content: "▷"; position: absolute; right: -6px; top: -9px; font-size: 10px; }
 

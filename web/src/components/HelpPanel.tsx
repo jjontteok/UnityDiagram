@@ -87,7 +87,7 @@ export function HelpPanel() {
         <h4>상자(클래스) 색과 모양</h4>
         <div className="help-grid">
           <span className="sw role-MonoBehaviour" /> <span><b>파랑</b> — MonoBehaviour: GameObject 에 붙는 컴포넌트</span>
-          <span className="sw role-NetworkBehaviour" /> <span><b>남색</b> — NetworkBehaviour: 네트워크로 동기화되는 컴포넌트</span>
+          <span className="sw role-NetworkBehaviour" /> <span><b>주황</b> — NetworkBehaviour: 네트워크로 동기화되는 컴포넌트</span>
           <span className="sw role-ScriptableObject" /> <span><b>초록</b> — ScriptableObject: 에셋으로 저장되는 데이터</span>
           <span className="sw role-Data" /> <span><b>노랑</b> — 일반 C# 클래스/구조체</span>
           <span className="sw tag-ui" /> <span><b>보라</b> — UI 를 다루는 컴포넌트</span>
@@ -98,7 +98,13 @@ export function HelpPanel() {
         <p>
           상자 위쪽의 <code>«MonoBehaviour»</code> 같은 글자는 종류이고, 아래 기호는
           🌐 네트워크 · ⭐ 싱글톤 · 📦N 프리팹/씬 N곳에서 사용 · 🗂N 데이터 에셋 N개 · 🔁 순환 참조 를 뜻합니다.
-          확대하면 상자 안에 주요 필드와 메서드가 나타납니다 (◆ 인스펙터 필드, ◇ Unity 메시지, ⇄ RPC).
+          오른쪽 아래 <b>☰ (상세 표시)</b> 를 켜면 상자 안에 주요 필드와 메서드가 나타납니다 (◆ 인스펙터 필드, ◇ Unity 메시지, ⇄ RPC).
+        </p>
+        <h4>관련 묶음 (점선 상자)</h4>
+        <p>
+          서로 강하게 연결된 클래스끼리는 연한 <b>점선 상자</b>로 자동으로 묶이고, 위에 "<b>○○ 관련</b>" 처럼 그 묶음의 중심 클래스 이름이 붙습니다.
+          상속·같은 GameObject·GetComponent·이벤트처럼 가까운 관계일수록 같은 묶음이 되고 서로 가깝게 놓입니다.
+          <code>Managers.Instance</code>, 상수, enum 처럼 거의 모든 클래스가 쓰는 연결은 화살표는 그리지만 배치할 때는 무시해서, 모든 상자가 한가운데로 엉키지 않게 합니다.
         </p>
         <h4>연결선</h4>
         <div className="help-grid">
@@ -135,8 +141,16 @@ export function HelpPanel() {
         <h3>조작법</h3>
         <ul>
           <li><b>마우스 휠</b> 또는 오른쪽 아래 <b>＋ / −</b>: 확대·축소, <b>⤢</b>: 전체가 보이게 맞춤</li>
-          <li><b>빈 곳 드래그</b>: 화면 이동 · <b>상자 드래그</b>: 위치 옮기기 (옮긴 위치는 기억됩니다)</li>
-          <li><b>클릭</b>: 클래스·모듈·연결선 선택 → 오른쪽 상세에 정보 표시</li>
+          <li>
+            오른쪽 아래 <b>☰ (상세 표시)</b>: 켜면 확대하지 않아도 모든 클래스 상자에 필드·메서드 목록이 보입니다 (상자가 커지므로 다시 배치됨).
+            끄면 클래스 이름만 보입니다. 확대·축소와는 상관없고, 설정은 기억됩니다.
+          </li>
+          <li><b>휠 버튼(가운데 버튼)을 누른 채 드래그</b>: 화면 이동 · <b>상자를 왼쪽 버튼으로 드래그</b>: 위치 옮기기 (옮긴 위치는 기억됩니다)</li>
+          <li>
+            <b>클릭</b>: 클래스·모듈·연결선 선택 → 오른쪽 상세에 정보 표시. 클래스나 모듈을 선택하면 연결된 화살표 색이 바뀝니다 —{" "}
+            <span className="help-color out">하늘색</span> 은 선택한 것이 <b>사용하는</b> 쪽(나가는 화살표),{" "}
+            <span className="help-color in">분홍색</span> 은 선택한 것을 <b>사용하는</b> 쪽(들어오는 화살표)입니다.
+          </li>
           <li><b>더블클릭</b>: 모듈은 펼치기/접기, 클래스는 "선택 주변" 보기</li>
           <li><b>🔍 검색</b>: 클래스 이름 일부를 입력하고 Enter → 그 클래스로 이동 (접힌 모듈은 자동으로 펼침)</li>
           <li>왼쪽 목록에서 모듈을 펼쳐 클래스 이름을 눌러도 이동합니다</li>
@@ -164,7 +178,7 @@ export function HelpPanel() {
         <h3>구조 해설</h3>
         <p>
           위쪽의 <b>🧭 클래스 다이어그램 보기</b>를 누르면 오른쪽 <b>구조 해설</b> 탭에 설명이 단계별로 나오고,
-          단계마다 다이어그램이 해당 클래스로 이동해 주황색으로 강조합니다.
+          단계마다 다이어그램이 해당 클래스로 이동해 하늘색으로 강조합니다.
         </p>
         <ol>
           <li><b>개요</b> — 프로젝트 규모, 쓰는 기술(멀티플레이·2D·Input System 등), 중심 클래스</li>
@@ -232,7 +246,7 @@ export function HelpPanel() {
           <dt>다이어그램이 너무 복잡해요</dt>
           <dd>"모듈" 보기에서 필요한 모듈만 펼치거나, 클래스를 더블클릭해 "선택 주변"만 보세요. 엣지 종류에서 "참조"를 끄는 것도 도움이 됩니다.</dd>
           <dt>글자가 안 보여요</dt>
-          <dd>＋ 버튼이나 휠로 확대하세요. 어느 정도 확대하면 상자 안에 멤버 목록까지 보입니다.</dd>
+          <dd>＋ 버튼이나 휠로 확대하세요. 필드·메서드까지 보려면 오른쪽 아래 ☰ (상세 표시)를 켜세요.</dd>
           <dt>있어야 할 연결선이 없어요</dt>
           <dd>
             코드만 보고 분석하므로 리플렉션, 문자열로 찾는 경우(<code>Find("이름")</code>), 람다 안의 일부 호출은 놓칠 수 있습니다.

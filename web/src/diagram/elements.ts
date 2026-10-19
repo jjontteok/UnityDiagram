@@ -2,6 +2,7 @@
 import type { ElementDefinition } from "cytoscape";
 import type { Edge, EdgeKind, Module, ProjectGraph, TypeNode, UnityRole } from "../types";
 import type { ViewMode } from "../state/store";
+import { louvain, type WEdge } from "./community";
 
 export interface BuildInput {
   graph: ProjectGraph;
@@ -162,14 +163,57 @@ export function buildElements(inp: BuildInput): BuildResult {
     });
   }
 
+  // 클래스 노드의 부모(모듈 상자)
+  const parentOf = new Map<string, string | undefined>();
+  for (const n of nodes) {
+    if (repOf.get(n.id) !== n.id) continue;
+    const p = useModules ? (childOf.get(n.id) && expanded.has(childOf.get(n.id)!.id) ? childOf.get(n.id)!.id : topOf.get(n.id)?.id) : undefined;
+    parentOf.set(n.id, p && usedModules.has(p) ? p : undefined);
+  }
+
+  // 관련 묶음: 같은 상자 안에서 강하게 연결된 클래스끼리 그룹으로 (상속 뷰는 계층 배치라 제외)
+  const groupOf = new Map<string, string>();
+  if (mode !== "inherit") {
+    const buckets = new Map<string, string[]>();
+    for (const [id, p] of parentOf) buckets.set(p ?? "", [...(buckets.get(p ?? "") ?? []), id]);
+    for (const [key, members] of buckets) {
+      if (members.length < 6) continue;
+      const inBucket = new Set(members);
+      const wedges: WEdge[] = [];
+      for (const e of edges) {
+        if (!inBucket.has(e.source) || !inBucket.has(e.target)) continue;
+        const w = layoutStrength(e, nodeById.get(e.target));
+        if (w > 0) wedges.push({ s: e.source, t: e.target, w });
+      }
+      const comm = louvain(members, wedges);
+      const byComm = new Map<number, string[]>();
+      for (const [id, c] of comm) byComm.set(c, [...(byComm.get(c) ?? []), id]);
+      const degree = new Map<string, number>();
+      for (const e of wedges) for (const id of [e.s, e.t]) degree.set(id, (degree.get(id) ?? 0) + e.w);
+      let gi = 0;
+      for (const ids of byComm.values()) {
+        // 너무 작거나 상자 전체와 같은 묶음은 의미가 없으므로 만들지 않음
+        if (ids.length < 3 || ids.length === members.length) continue;
+        const center = [...ids].sort((a, b) => (degree.get(b) ?? 0) - (degree.get(a) ?? 0))[0];
+        const gid = `grp:${key}:${gi++}`;
+        elements.push({
+          group: "nodes",
+          data: { id: gid, parent: key || undefined, kind: "group", label: `${nodeById.get(center)?.name ?? ""} 관련` },
+          classes: "group",
+          selectable: false,
+        });
+        for (const id of ids) groupOf.set(id, gid);
+      }
+    }
+  }
+
   // 클래스 노드
   for (const n of nodes) {
     if (repOf.get(n.id) !== n.id) continue;
-    const parent = useModules ? (childOf.get(n.id) && expanded.has(childOf.get(n.id)!.id) ? childOf.get(n.id)!.id : topOf.get(n.id)?.id) : undefined;
     const classes = ["cls", `role-${n.unityRole}`, ...n.tags.map((t) => `tag-${t}`), n.kind === "interface" ? "iface" : "", inCycle.has(n.id) ? "cycle" : ""];
     elements.push({
       group: "nodes",
-      data: { id: n.id, parent: parent && usedModules.has(parent) ? parent : undefined, kind: "class", ...classData(g, n, inCycle) },
+      data: { id: n.id, parent: groupOf.get(n.id) ?? parentOf.get(n.id), kind: "class", ...classData(g, n, inCycle) },
       classes: classes.filter(Boolean).join(" "),
     });
   }
@@ -184,7 +228,7 @@ export function buildElements(inp: BuildInput): BuildResult {
     const rt = repOf.get(e.target)!;
     if (rs === rt) continue;
     if (isClassRep(rs) && isClassRep(rt)) {
-      elements.push(edgeElement(e));
+      elements.push(edgeElement(e, layoutStrength(e, nodeById.get(e.target))));
       edgeRepOf.set(e.id, e.id);
       continue;
     }
@@ -211,6 +255,8 @@ export function buildElements(inp: BuildInput): BuildResult {
         members: x.members,
         label: String(x.weight),
         width: Math.min(9, 1 + Math.log2(1 + x.weight)),
+        len: 140,
+        elastic: Math.min(0.45, 0.1 + x.weight / 200),
       },
       classes: `agg${onlyInherit ? " agg-inherit" : ""}`,
     });
@@ -232,13 +278,48 @@ const EDGE_TEXT: Partial<Record<EdgeKind, string>> = {
   wiredInInspector: "inspector",
 };
 
-function edgeElement(e: Edge): ElementDefinition {
+/**
+ * 배치할 때 이 연결이 얼마나 "가깝다"는 신호인지 (0 이면 배치 계산에서 제외).
+ * 매니저·상수·enum 처럼 거의 모두가 쓰는 대상으로의 연결은 모든 상자를 한가운데로 끌어당겨 엉키게 하므로 뺀다.
+ */
+export function layoutStrength(e: Edge, target: TypeNode | undefined): number {
+  if (!target || target.unityRole === "External" || target.kind === "enum") return 0;
+  if (e.kind === "usesSingleton" || e.kind === "callsStatic" || e.kind === "nestedIn") return 0;
+  if (target.tags.includes("singleton") && e.kind === "references") return 0;
+  const base: Partial<Record<EdgeKind, number>> = {
+    inherits: 3,
+    implements: 2,
+    coLocated: 3,
+    requiresComponent: 3,
+    getsComponent: 2.5,
+    wiredInInspector: 2,
+    subscribes: 2,
+    instantiates: 2,
+    creates: 1.5,
+    finds: 1,
+    references: 1,
+  };
+  const b = base[e.kind] ?? 1;
+  return e.kind === "references" ? b * Math.min(3, e.weight) * (e.serialized ? 1.5 : 1) : b;
+}
+
+function edgeElement(e: Edge, strength: number): ElementDefinition {
   let label = EDGE_TEXT[e.kind] ?? "";
   if (e.kind === "references" && e.serialized) label = "[SerializeField]";
   if (e.multiplicity === "many" && e.kind === "references") label = `${label ? `${label} ` : ""}*`;
   return {
     group: "edges",
-    data: { id: e.id, source: e.source, target: e.target, kind: e.kind, weight: e.weight, label },
-    classes: `k-${e.kind}${e.serialized ? " serialized" : ""}`,
+    data: {
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      kind: e.kind,
+      weight: e.weight,
+      label,
+      // 강한 관계일수록 짧고 단단하게
+      len: strength >= 2.5 ? 45 : strength >= 1.5 ? 65 : 90,
+      elastic: Math.min(0.8, 0.15 + strength * 0.15),
+    },
+    classes: `k-${e.kind}${e.serialized ? " serialized" : ""}${strength === 0 ? " layout-ignore" : ""}`,
   };
 }

@@ -45,7 +45,15 @@ if (!dev && fs.existsSync(webDist)) {
 }
 
 await getParser(); // WASM 미리 로드
-await app.listen({ host: HOST, port });
+try {
+  await app.listen({ host: HOST, port });
+} catch (err) {
+  if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
+    console.error(`\n  ⚠ ${port} 포트를 이미 다른 프로그램이 쓰고 있습니다. 이미 켜 둔 서버 창을 닫거나, .env 의 PORT 를 다른 번호로 바꾸세요.\n`);
+    process.exit(1);
+  }
+  throw err;
+}
 
 const url = `http://localhost:${port}`;
 console.log(`\n  Unity 클래스 다이어그램 서버: ${dev ? `${url} (API 전용 — 웹은 http://localhost:5173)` : url}`);

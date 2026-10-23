@@ -12,6 +12,7 @@ import {
 import { TypeResolver, type ResolvableType } from "../parse/typeResolver.js";
 import { readMetaGuid, scanUnityYaml } from "../parse/unityYaml.js";
 import { computeMetrics } from "./metrics.js";
+import { buildFeatureModules } from "./features.js";
 
 export type ProgressFn = (phase: string, done: number, total: number) => void;
 
@@ -52,18 +53,19 @@ interface ResolvedType {
   ctx?: TypeContext;
 }
 
-export async function analyzeProject(projectRoot: string, excludeGlobs: string[], progress: ProgressFn): Promise<ProjectGraph> {
+export async function analyzeProject(projectRoot: string, excludeGlobs: string[], progress: ProgressFn, autoExcludePlugins = true): Promise<ProjectGraph> {
   const started = Date.now();
   const root = path.resolve(projectRoot);
   await assertUnityProject(root);
   const warnings: string[] = [];
 
   progress("scan", 0, 1);
-  const scan = await scanProject(root, excludeGlobs);
+  const scan = await scanProject(root, excludeGlobs, autoExcludePlugins);
   progress("scan", 1, 1);
 
   const hash = crypto.createHash("sha256");
   hash.update(JSON.stringify(excludeGlobs));
+  hash.update(JSON.stringify(scan.plugins.map((p) => p.path)));
   hash.update(root); // 같은 내용이라도 다른 위치(로컬/GitHub)면 다른 그래프
   const read = async (rel: string) => {
     const text = await fs.readFile(path.join(root, rel), "utf8");
@@ -668,8 +670,11 @@ export async function analyzeProject(projectRoot: string, excludeGlobs: string[]
   const largestAsmdefShare = modulesByRule.asmdef
     ? Math.max(...modulesByRule.asmdef.filter((m) => !m.parent).map((m) => m.nodeIds.length)) / Math.max(1, nodes.length)
     : 1;
+  // 기능 기준: 연결이 강한 클래스끼리 묶음. 기능이 둘 이상 나오면 처음 보는 사람에게 가장 알기 쉬우므로 기본으로
+  modulesByRule.feature = buildFeatureModules(nodes, edgeList);
+  const features = modulesByRule.feature.filter((m) => !m.parent && m.label !== "공통·기타").length;
   const defaultModuleRule: ModuleRule =
-    modulesByRule.asmdef && largestAsmdefShare < 0.6 ? "asmdef" : namespaced >= 0.5 ? "namespace" : "folder";
+    features >= 2 ? "feature" : modulesByRule.asmdef && largestAsmdefShare < 0.6 ? "asmdef" : namespaced >= 0.5 ? "namespace" : "folder";
 
   const metrics = computeMetrics(nodes, edgeList);
   const contentHash = hash.digest("hex");
@@ -701,6 +706,7 @@ export async function analyzeProject(projectRoot: string, excludeGlobs: string[]
     metrics,
     warnings,
     unresolved: [...unresolved.values()],
+    plugins: scan.plugins,
     stats: {
       scripts: scan.scripts.length,
       prefabs: scan.prefabs.length,

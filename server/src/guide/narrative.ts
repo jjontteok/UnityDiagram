@@ -151,15 +151,19 @@ export function buildOverview(g: ProjectGraph): { steps: NarrationStep[]; finish
       [
         `${g.projectName} 은(는) ${g.unityVersion ? `Unity ${g.unityVersion} 프로젝트로, ` : ""}스크립트 ${g.stats.scripts}개에 타입 ${v.nodes.length}개가 있습니다 (${roleBreakdown(v.nodes)}).`,
         traits.length ? `사용 패키지로 보아 **${traits.join(" · ")}** 를 쓰는 프로젝트로 보입니다.` : "",
-        `코드는 ${v.top.length}개 모듈(${g.defaultModuleRule === "namespace" ? "네임스페이스" : g.defaultModuleRule === "asmdef" ? "어셈블리" : "폴더"} 기준)로 나뉘어 있고, 가장 많이 참조되는 중심 클래스는 ${list(hubs, 5)} 입니다.`,
-        "다이어그램의 모듈 상자를 더블클릭하면 안의 클래스가 펼쳐집니다.",
+        g.defaultModuleRule === "feature"
+          ? `서로 강하게 연결된 클래스끼리 묶어 보면 ${v.top.length}개 기능으로 나뉩니다 (${v.top.slice(0, 6).map((m) => `\`${m.label}\``).join(", ")}${v.top.length > 6 ? " …" : ""}). 가장 많이 참조되는 중심 클래스는 ${list(hubs, 5)} 입니다.`
+          : `코드는 ${v.top.length}개 모듈(${g.defaultModuleRule === "namespace" ? "네임스페이스" : g.defaultModuleRule === "asmdef" ? "어셈블리" : "폴더"} 기준)로 나뉘어 있고, 가장 많이 참조되는 중심 클래스는 ${list(hubs, 5)} 입니다.`,
+        "\n\n**그림 읽는 법**: 상자 하나가 클래스 하나이고, 색은 역할입니다 (파랑 MonoBehaviour · 주황 NetworkBehaviour · 초록 ScriptableObject · 노랑 일반 데이터 클래스). 화살표 `A → B` 는 \"A 가 B 를 사용한다\"는 뜻입니다.",
+        "해설 중에는 각 단계에 나오는 클래스만 따로 그려 보여주고, 해설을 끝내면(ESC) 전체 다이어그램으로 돌아갑니다.",
       ].filter(Boolean).join(" "),
       { nodeIds: hubs.slice(0, 6) },
     ),
   );
 
   // 2. 계층(모듈)별
-  const topMods = [...v.top].sort((a, b) => b.nodeIds.length - a.nodeIds.length).slice(0, 4);
+  const byFeature = g.defaultModuleRule === "feature";
+  const topMods = [...v.top].filter((m) => m.label !== "공통·기타").sort((a, b) => b.nodeIds.length - a.nodeIds.length).slice(0, byFeature ? 6 : 4);
   for (const m of topMods) {
     const ids = v.byFanIn(m.nodeIds.filter(v.isClass));
     const ns = ids.map((id) => v.byId.get(id)!);
@@ -179,12 +183,14 @@ export function buildOverview(g: ProjectGraph): { steps: NarrationStep[]; finish
     steps.push(
       step(
         "layer",
-        `${layerName(m, v)}: ${m.label}`,
+        byFeature ? m.label : `${layerName(m, v)}: ${m.label}`,
         [
-          `\`${m.label}\` 모듈에는 타입 ${ids.length}개가 있습니다 (${roleBreakdown(ns)}).`,
-          `이 모듈에서 가장 많이 쓰이는 클래스는 ${list(ids, 4)} 입니다.`,
-          dep.size ? `주로 ${topK(dep)} 모듈에 의존하고,` : "다른 모듈에 거의 의존하지 않고,",
-          used.size ? `${topK(used)} 모듈이 이 모듈을 많이 사용합니다.` : "다른 모듈에서 거의 사용하지 않습니다.",
+          byFeature
+            ? `\`${m.label}\` 에는 서로 긴밀하게 연결된 클래스 ${ids.length}개가 있습니다 (${roleBreakdown(ns)}). 주로 \`${[...new Set(ns.map((n) => n.folder.split("/").pop()))].slice(0, 3).join("`, `")}\` 폴더에 있습니다.`
+            : `\`${m.label}\` 모듈에는 타입 ${ids.length}개가 있습니다 (${roleBreakdown(ns)}).`,
+          `${byFeature ? "이 기능" : "이 모듈"}에서 가장 많이 쓰이는 클래스는 ${list(ids, 4)} 입니다.`,
+          dep.size ? `주로 ${topK(dep)} ${byFeature ? "" : "모듈"}에 의존하고,` : `다른 ${byFeature ? "기능" : "모듈"}에 거의 의존하지 않고,`,
+          used.size ? `${topK(used)} ${byFeature ? "에서" : "모듈이"} 이 ${byFeature ? "기능을" : "모듈을"} 많이 사용합니다.` : `다른 ${byFeature ? "기능" : "모듈"}에서 거의 사용하지 않습니다.`,
         ].join(" "),
         { nodeIds: ids.slice(0, 10), moduleIds: [m.id] },
       ),

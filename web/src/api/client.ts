@@ -32,11 +32,11 @@ export const api = {
     fetch(`/api/source?graphId=${graphId}&filePath=${encodeURIComponent(filePath)}`).then((r) => json<SourceFile>(r)),
   mermaid: (graphId: string, moduleId?: string) =>
     fetch(`/api/export/mermaid?graphId=${graphId}${moduleId ? `&moduleId=${encodeURIComponent(moduleId)}` : ""}`).then((r) => r.text()),
-  startAnalyze: (projectPath: string, excludeGlobs: string[]) =>
+  startAnalyze: (projectPath: string, excludeGlobs: string[], autoExcludePlugins = true) =>
     fetch("/api/analyze", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ projectPath, excludeGlobs }),
+      body: JSON.stringify({ projectPath, excludeGlobs, autoExcludePlugins }),
     }).then((r) => json<{ jobId: string }>(r)),
 };
 

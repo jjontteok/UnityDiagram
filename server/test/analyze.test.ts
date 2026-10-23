@@ -94,3 +94,12 @@ describe("parseTypeString", () => {
     expect(parseTypeString("Enemy[]").array).toBe(true);
   });
 });
+
+describe("기능 기준 모듈", () => {
+  it("직접 만든 클래스가 모두 정확히 한 기능에 들어간다", () => {
+    const tops = g.modulesByRule.feature!.filter((m) => !m.parent);
+    const own = g.nodes.filter((n) => n.unityRole !== "External").map((n) => n.id).sort();
+    expect(tops.flatMap((m) => m.nodeIds).sort()).toEqual(own);
+    expect(new Set(tops.map((m) => m.label)).size).toBe(tops.length);
+  });
+});

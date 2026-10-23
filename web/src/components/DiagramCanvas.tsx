@@ -5,9 +5,9 @@ import fcose from "cytoscape-fcose";
 import svg from "cytoscape-svg";
 import { buildElements, type BuildResult } from "../diagram/elements";
 import { buildStyles, PALETTES } from "../diagram/styles";
-import { layoutFor, removeOverlaps } from "../diagram/layouts";
+import { guideLayout, layoutFor, removeOverlaps } from "../diagram/layouts";
 import { playFlow } from "../diagram/flowAnimation";
-import { currentStep, EDGE_LABEL, modulesOf, useStore, writeLocal } from "../state/store";
+import { activeSession, currentStep, EDGE_LABEL, modulesOf, useStore, writeLocal } from "../state/store";
 import type { Edge } from "../types";
 
 cytoscape.use(elk);
@@ -71,6 +71,15 @@ export function DiagramCanvas() {
   const modules = useMemo(() => modulesOf(graph, moduleRule), [graph, moduleRule]);
   const edgeById = useMemo(() => new Map<string, Edge>(graph.edges.map((e) => [e.id, e])), [graph]);
   const nodeById = useStore((s) => s.nodeById);
+
+  // 해설 중에는 그 단계에 나오는 클래스만 따로 크게 보여준다 (전체 그림에서는 너무 작아 읽을 수 없음)
+  const guideIds = useMemo(() => {
+    if (!narrationActive || !step) return null;
+    const ids = [...new Set([...step.focus.nodeIds, ...step.sequence.flatMap((s) => [s.from, s.to])])].filter((id) => nodeById.has(id));
+    return ids.length ? ids : null;
+  }, [narrationActive, step, nodeById]);
+  const guideKey = guideIds ? [...guideIds].sort().join("|") : "";
+  const guideFlow = !!guideIds && step?.type === "flow" && step.sequence.length > 0;
 
   const viewKey = useMemo(
     () =>
@@ -148,6 +157,19 @@ export function DiagramCanvas() {
       cy.zoom({ level, renderedPosition: { x: e.clientX - rect.left, y: e.clientY - rect.top } });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
+    // 묶음·기능 이름은 축소해도 화면에서 일정 크기 이상으로 보이게 (작으면 무엇으로 묶였는지 알 수 없음)
+    let raf = 0;
+    const scaleLabels = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const z = cy.zoom();
+        cy.batch(() => {
+          cy.nodes(".group").style("font-size", Math.min(48, Math.max(15, 14 / z)));
+          cy.nodes(".module.expanded").style("font-size", Math.min(60, Math.max(20, 17 / z)));
+        });
+      });
+    };
+    cy.on("zoom layoutstop", scaleLabels);
     el.addEventListener("mousedown", onDown);
     el.addEventListener("auxclick", noAutoScroll);
     window.addEventListener("mousemove", onMove);
@@ -155,6 +177,7 @@ export function DiagramCanvas() {
 
     return () => {
       el.removeEventListener("wheel", onWheel);
+      cancelAnimationFrame(raf);
       el.removeEventListener("mousedown", onDown);
       el.removeEventListener("auxclick", noAutoScroll);
       window.removeEventListener("mousemove", onMove);
@@ -203,9 +226,10 @@ export function DiagramCanvas() {
   // ───── 요소 재구성 + 레이아웃 ─────
   useEffect(() => {
     const cy = cyRef.current!;
-    const build = buildElements({ graph, modules, mode: viewMode, expanded: new Set(expanded), roleFilter, edgeFilter, neighborRoot, hops });
+    const guide = guideKey ? guideKey.split("|") : null;
+    const build = buildElements({ graph, modules, mode: viewMode, expanded: new Set(expanded), roleFilter, edgeFilter, neighborRoot, hops, focusIds: guide });
     buildRef.current = build;
-    const saved = (() => {
+    const saved = guide ? null : (() => {
       try {
         return JSON.parse(localStorage.getItem(posKey) ?? "null") as Record<string, { x: number; y: number }> | null;
       } catch {
@@ -223,6 +247,7 @@ export function DiagramCanvas() {
     const leaves = cy.nodes().filter((n) => n.isChildless());
     const usePreset = !!saved && leaves.length > 0 && leaves.toArray().every((n) => !!saved[n.id()]);
     const savePositions = () => {
+      if (guide) return; // 해설용 배치는 저장하지 않음 (원래 다이어그램 위치 유지)
       const pos: Record<string, { x: number; y: number }> = {};
       cy.nodes().filter((n) => n.isChildless() && !n.hasClass("token")).forEach((n) => {
         pos[n.id()] = n.position();
@@ -231,8 +256,10 @@ export function DiagramCanvas() {
     };
     const layout = usePreset
       ? cy.layout({ name: "preset", positions: (n: any) => saved![n.id()], fit: true, padding: 40 } as any)
-      : // 매니저·상수·enum 으로의 연결(layout-ignore)은 그대로 그리되 배치 계산에서는 뺀다
-        cy.elements().not("edge.layout-ignore").layout(layoutFor(viewMode, build.visibleNodeCount, true, detailOnRef.current));
+      : guide
+        ? cy.elements().layout(guideLayout(guideFlow, build.visibleNodeCount))
+        : // 매니저·상수·enum 으로의 연결(layout-ignore)은 그대로 그리되 배치 계산에서는 뺀다
+          cy.elements().not("edge.layout-ignore").layout(layoutFor(viewMode, build.visibleNodeCount, true, detailOnRef.current));
     const started = performance.now();
     layout.one("layoutstop", () => {
       if (!usePreset) {
@@ -251,7 +278,7 @@ export function DiagramCanvas() {
       layout.stop();
       cy.off("dragfree", "node", savePositions);
     };
-  }, [graph, modules, viewMode, expanded, roleFilter, edgeFilter, neighborRoot, hops, posKey, detailAlways]);
+  }, [graph, modules, viewMode, expanded, roleFilter, edgeFilter, neighborRoot, hops, posKey, detailAlways, guideKey, guideFlow]);
 
   // ───── 선택 동기화 ─────
   useEffect(() => {
@@ -274,13 +301,6 @@ export function DiagramCanvas() {
     }
   }, [selection, layoutVersion]);
 
-  // ───── 해설 단계 → 필요한 모듈 펼치기 ─────
-  useEffect(() => {
-    if (!step) return;
-    const ids = [...new Set([...step.focus.nodeIds, ...step.sequence.flatMap((s) => [s.from, s.to])])];
-    if (ids.length && ids.length <= 25) useStore.getState().ensureVisible(ids);
-  }, [step]);
-
   // ───── 해설 하이라이트 + 카메라 + flow 애니메이션 ─────
   useEffect(() => {
     const cy = cyRef.current!;
@@ -289,16 +309,6 @@ export function DiagramCanvas() {
     cy.$(".token").remove();
     cy.elements().removeClass("dim focus focus-module seq-active");
     if (!narrationActive || !step || !b) return;
-    // 접힌 모듈을 펼치는 중이면(위 effect) 재배치가 끝난 뒤 다시 실행된다
-    const wanted = [...new Set([...step.focus.nodeIds, ...step.sequence.flatMap((s) => [s.from, s.to])])];
-    const { viewMode: vm, roleFilter: rf } = useStore.getState();
-    if (
-      (vm === "module" || vm === "all") &&
-      wanted.length <= 25 &&
-      wanted.some((id) => b.repOf.get(id) !== id && rf[nodeById.get(id)?.unityRole ?? "External"])
-    ) {
-      return;
-    }
     const signal = { cancelled: false };
 
     const focusIds = new Set<string>();
@@ -354,7 +364,8 @@ export function DiagramCanvas() {
         duration: 600,
         complete: () => {
           if (signal.cancelled) return;
-          if (step.focus.camera === "zoomIn") cy.animate({ zoom: { level: Math.min(cy.zoom() * 1.3, 2.5), renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } } }, { duration: 300 });
+          // 클래스가 한두 개뿐이면 지나치게 커지지 않도록
+          if (cy.zoom() > 1.6) cy.animate({ zoom: { level: 1.6, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } } }, { duration: 250 });
           focus.nodes().flashClass("pulse", 500);
           if (step.type === "flow" && step.sequence.length) {
             const hops = step.sequence.map((s) => ({ from: b.repOf.get(s.from) ?? s.from, to: b.repOf.get(s.to) ?? s.to, edgeId: s.edgeId ? b.edgeRepOf.get(s.edgeId) : undefined }));
@@ -366,7 +377,7 @@ export function DiagramCanvas() {
     return () => {
       signal.cancelled = true;
     };
-  }, [step, narrationActive, layoutVersion, modules, nodeById]);
+  }, [step, narrationActive, layoutVersion, modules]);
 
   const palette = PALETTES[theme];
   return (
@@ -374,6 +385,7 @@ export function DiagramCanvas() {
       <div ref={ref} className="diagram" />
       {tooltip && <div className="tooltip" style={{ left: tooltip.x + 14, top: tooltip.y + 14 }} dangerouslySetInnerHTML={{ __html: tooltip.html }} />}
       <Legend />
+      {narrationActive && step && <GuideBar />}
       <div className="zoom-controls">
         <button className="btn icon" onClick={() => diagram.zoomBy(1.6)} title="확대">＋</button>
         <button className="btn icon" onClick={() => diagram.zoomBy(1 / 1.6)} title="축소">−</button>
@@ -388,8 +400,27 @@ export function DiagramCanvas() {
         </button>
       </div>
       <div className="diagram-hint">
-        {viewMode === "module" ? "모듈을 더블클릭하면 펼쳐집니다 · 클래스를 더블클릭하면 주변 보기 · 휠 버튼 드래그로 화면 이동" : viewMode === "neighbor" ? "선택한 클래스 주변 N단계 · 휠 버튼 드래그로 화면 이동" : "휠 버튼 드래그로 화면 이동"}
+        {guideIds ? "해설 중: 이 단계에 나오는 클래스만 보여줍니다 · ← → 로 단계 이동 · ESC 로 전체 다이어그램으로" : viewMode === "module" ? "모듈을 더블클릭하면 펼쳐집니다 · 클래스를 더블클릭하면 주변 보기 · 휠 버튼 드래그로 화면 이동" : viewMode === "neighbor" ? "선택한 클래스 주변 N단계 · 휠 버튼 드래그로 화면 이동" : "휠 버튼 드래그로 화면 이동"}
       </div>
+    </div>
+  );
+}
+
+/** 해설 중 다이어그램 위에 뜨는 작은 단계 이동 막대 (상세 탭을 보고 있어도 단계를 넘길 수 있게) */
+function GuideBar() {
+  const session = useStore(activeSession);
+  const stepIndex = useStore((s) => s.stepIndex);
+  const st = useStore.getState;
+  if (!session) return null;
+  const step = session.steps[stepIndex];
+  return (
+    <div className="guide-bar">
+      <button className="btn small" onClick={() => st().setStep(stepIndex - 1)} disabled={stepIndex === 0} title="이전 단계 (←)">◀</button>
+      <button className="guide-bar-title" onClick={() => st().setPanelTab("ai")} title="해설 글 보기">
+        <b>{stepIndex + 1}/{session.steps.length}</b> {step?.title}
+      </button>
+      <button className="btn small" onClick={() => st().setStep(stepIndex + 1)} disabled={stepIndex >= session.steps.length - 1} title="다음 단계 (→)">▶</button>
+      <button className="btn small" onClick={() => st().endNarration()} title="해설 끝내고 전체 다이어그램으로 (ESC)">✕ 해설 종료</button>
     </div>
   );
 }

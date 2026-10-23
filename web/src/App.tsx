@@ -6,7 +6,7 @@ import { TopBar } from "./components/TopBar";
 import { ExplorerTree } from "./components/ExplorerTree";
 import { DiagramCanvas } from "./components/DiagramCanvas";
 import { DetailPanel } from "./components/DetailPanel";
-import { NarrationPanel } from "./components/NarrationPanel";
+import { NarrationPanel, useNarrationKeys } from "./components/NarrationPanel";
 import { CodeViewer } from "./components/CodeViewer";
 import { HelpPanel } from "./components/HelpPanel";
 
@@ -19,6 +19,7 @@ export function App() {
   const streaming = useStore((s) => s.sessions.some((x) => x.status === "streaming"));
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
+  useNarrationKeys();
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;

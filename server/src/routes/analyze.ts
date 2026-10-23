@@ -32,10 +32,11 @@ export function registerAnalyzeRoutes(app: FastifyInstance) {
 
   app.get("/api/recent", async () => loadRecent());
 
-  app.post<{ Body: { projectPath?: string; excludeGlobs?: string[] } }>("/api/analyze", async (req, reply) => {
+  app.post<{ Body: { projectPath?: string; excludeGlobs?: string[]; autoExcludePlugins?: boolean } }>("/api/analyze", async (req, reply) => {
     const projectPath = req.body?.projectPath?.trim().replace(/^"(.*)"$/, "$1");
     if (!projectPath) return reply.code(400).send({ error: "projectPath 가 필요합니다" });
     const excludes = Array.isArray(req.body.excludeGlobs) ? req.body.excludeGlobs.filter((x) => typeof x === "string" && x.trim()) : DEFAULT_EXCLUDES;
+    const autoExcludePlugins = req.body.autoExcludePlugins !== false;
     const jobId = crypto.randomUUID();
     const job: Job = { events: [], listeners: new Set(), finished: false };
     jobs.set(jobId, job);
@@ -60,7 +61,7 @@ export function registerAnalyzeRoutes(app: FastifyInstance) {
           if (now - lastProgress < 80 && done !== total) return;
           lastProgress = now;
           emit({ event: "progress", data: { phase, label: PHASE_LABEL[phase] ?? phase, done, total } });
-        });
+        }, autoExcludePlugins);
         if (checkout) {
           const sub = path.relative(checkout.dir, checkout.projectRoot).replace(/\\/g, "/");
           g.source = { kind: "github", url: checkout.ref.url, branch: checkout.branch, commit: checkout.commit, subPath: sub };

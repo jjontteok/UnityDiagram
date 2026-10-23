@@ -38,6 +38,14 @@ const SPARSE_PATTERNS = [
   "*.asmdef",
   "ProjectVersion.txt",
   "manifest.json",
+  // 플러그인 폴더 판별용 (fileScanner 의 MARKER_GLOBS)
+  "LICENSE",
+  "LICENSE.*",
+  "LICENCE*",
+  "License.*",
+  "*Third-Party Notices*",
+  "*Third Party Notices*",
+  "package.json",
 ];
 
 /** "https://github.com/o/r", "github.com/o/r/tree/main/sub", "git@github.com:o/r.git" 등을 해석. 아니면 null */

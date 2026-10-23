@@ -31,10 +31,9 @@ function useCodeRenderer() {
         <button
           className="code-link"
           onClick={() => {
-            const st = useStore.getState();
-            st.ensureVisible([id]);
-            st.select({ kind: "node", id });
-            setTimeout(() => diagram.center(id), 600);
+            // 해설은 그대로 두고, 지금 그림에 있으면 그 클래스로 이동
+            useStore.getState().select({ kind: "node", id }, { keepTab: true });
+            diagram.center(id);
           }}
         >
           {text}
@@ -43,6 +42,22 @@ function useCodeRenderer() {
     }
     return <code className={className}>{children}</code>;
   };
+}
+
+/** 키보드: ← → 단계 이동, ESC 해설 종료. 다른 탭(상세 등)을 보고 있을 때도 동작하도록 앱 전체에 건다 */
+export function useNarrationKeys() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.closest("input, textarea, select")) return;
+      const st = useStore.getState();
+      if (!activeSession(st) || st.code) return; // 코드 보기 창이 열려 있으면 그 창이 먼저
+      if (e.key === "ArrowRight") st.setStep(st.stepIndex + 1);
+      else if (e.key === "ArrowLeft") st.setStep(st.stepIndex - 1);
+      else if (e.key === "Escape" && st.narrationActive) st.endNarration();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 }
 
 export function NarrationPanel() {
@@ -72,19 +87,6 @@ export function NarrationPanel() {
     }, ms);
     return () => window.clearTimeout(t);
   }, [playing, stepIndex, step, session, setStep, setPlaying]);
-
-  // 키보드: ← → ESC
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest("input, textarea, select")) return;
-      if (!session) return;
-      if (e.key === "ArrowRight") setStep(stepIndex + 1);
-      else if (e.key === "ArrowLeft") setStep(stepIndex - 1);
-      else if (e.key === "Escape") endNarration();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [session, stepIndex, setStep, endNarration]);
 
   useEffect(() => {
     const onHop = (e: Event) => setHop((e as CustomEvent<number>).detail);

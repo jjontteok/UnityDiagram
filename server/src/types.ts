@@ -105,7 +105,7 @@ export interface Edge {
   evidence: Evidence[];
 }
 
-export type ModuleRule = "asmdef" | "namespace" | "folder";
+export type ModuleRule = "feature" | "asmdef" | "namespace" | "folder";
 
 export interface Module {
   id: string; // "module:Controllers" / "module:Controllers/Player"
@@ -148,6 +148,8 @@ export interface ProjectGraph {
   warnings: string[];
   unresolved: { from: string; typeName: string; filePath: string; line: number }[];
   stats: { scripts: number; prefabs: number; scenes: number; assets: number; durationMs: number };
+  /** 플러그인(서드파티)으로 판단해 분석에서 뺀 폴더 */
+  plugins?: { path: string; scripts: number; reason: string }[];
 }
 
 // ───────── AI 해설 (SPEC 5.3) ─────────
@@ -176,4 +178,6 @@ export interface NarrationFinish {
 export interface AnalyzeOptions {
   projectPath: string;
   excludeGlobs?: string[];
+  /** 플러그인 폴더 자동 제외 (기본 true) */
+  autoExcludePlugins?: boolean;
 }

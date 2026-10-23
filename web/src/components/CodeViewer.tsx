@@ -28,7 +28,8 @@ export function CodeViewer() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      // 닫혀 있을 때는 ESC 를 가로채지 않음 (해설 종료 등 다른 ESC 가 동작하도록)
+      if (e.key === "Escape" && useStore.getState().code) {
         e.stopPropagation();
         close();
       }

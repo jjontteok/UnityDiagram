@@ -2,7 +2,7 @@
 import type { ElementDefinition } from "cytoscape";
 import type { Edge, EdgeKind, Module, ProjectGraph, TypeNode, UnityRole } from "../types";
 import type { ViewMode } from "../state/store";
-import { louvain, type WEdge } from "./community";
+import { clusterNames, louvain, type WEdge } from "./community";
 
 export interface BuildInput {
   graph: ProjectGraph;
@@ -13,6 +13,8 @@ export interface BuildInput {
   edgeFilter: Record<EdgeKind, boolean>;
   neighborRoot: string | null;
   hops: number;
+  /** 해설 중: 이 클래스들만 모듈 상자 없이 보여준다 */
+  focusIds?: string[] | null;
 }
 
 export interface BuildResult {
@@ -88,10 +90,13 @@ export function buildElements(inp: BuildInput): BuildResult {
   const edges = g.edges.filter((e) => edgeFilter[e.kind]);
   const nodeById = new Map(g.nodes.map((n) => [n.id, n]));
 
-  let nodes = g.nodes.filter(visibleNode);
-  const useModules = mode === "module" || mode === "all";
+  const focusSet = inp.focusIds?.length ? new Set(inp.focusIds) : null;
+  let nodes = focusSet ? g.nodes.filter((n) => focusSet.has(n.id)) : g.nodes.filter(visibleNode);
+  const useModules = !focusSet && (mode === "module" || mode === "all");
 
-  if (mode === "inherit") {
+  if (focusSet) {
+    // 해설 단계의 클래스만 (역할 필터와 상관없이)
+  } else if (mode === "inherit") {
     const inh = new Set(g.edges.filter((e) => e.kind === "inherits" || e.kind === "implements").flatMap((e) => [e.source, e.target]));
     nodes = nodes.filter((n) => inh.has(n.id));
   } else if (mode === "neighbor" && inp.neighborRoot) {
@@ -173,7 +178,8 @@ export function buildElements(inp: BuildInput): BuildResult {
 
   // 관련 묶음: 같은 상자 안에서 강하게 연결된 클래스끼리 그룹으로 (상속 뷰는 계층 배치라 제외)
   const groupOf = new Map<string, string>();
-  if (mode !== "inherit") {
+  const usedNames = new Set<string>();
+  if (mode !== "inherit" && !focusSet) {
     const buckets = new Map<string, string[]>();
     for (const [id, p] of parentOf) buckets.set(p ?? "", [...(buckets.get(p ?? "") ?? []), id]);
     for (const [key, members] of buckets) {
@@ -196,9 +202,13 @@ export function buildElements(inp: BuildInput): BuildResult {
         if (ids.length < 3 || ids.length === members.length) continue;
         const center = [...ids].sort((a, b) => (degree.get(b) ?? 0) - (degree.get(a) ?? 0))[0];
         const gid = `grp:${key}:${gi++}`;
+        // 묶음 이름: 클래스 이름·폴더에 공통으로 나오는 단어 (예: "Inventory 관련"). 같은 상자 안에서 겹치지 않게
+        const cands = clusterNames(ids.map((id) => ({ name: nodeById.get(id)!.name, folder: nodeById.get(id)!.folder })), nodeById.get(center)?.name ?? "");
+        const name = cands.find((c) => !usedNames.has(`${key}:${c}`)) ?? cands[0];
+        usedNames.add(`${key}:${name}`);
         elements.push({
           group: "nodes",
-          data: { id: gid, parent: key || undefined, kind: "group", label: `${nodeById.get(center)?.name ?? ""} 관련` },
+          data: { id: gid, parent: key || undefined, kind: "group", label: `${name} 관련` },
           classes: "group",
           selectable: false,
         });

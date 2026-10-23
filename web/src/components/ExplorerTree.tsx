@@ -4,7 +4,8 @@ import { diagram } from "./DiagramCanvas";
 import { displayName } from "../diagram/elements";
 import type { Module, ModuleRule } from "../types";
 
-const RULE_LABEL: Record<ModuleRule, string> = { asmdef: "asmdef", namespace: "네임스페이스", folder: "폴더" };
+const RULE_LABEL: Record<ModuleRule, string> = { feature: "기능", asmdef: "asmdef", namespace: "네임스페이스", folder: "폴더" };
+const RULE_ORDER: ModuleRule[] = ["feature", "folder", "namespace", "asmdef"];
 
 export function ExplorerTree() {
   const graph = useStore((s) => s.graph)!;
@@ -77,7 +78,7 @@ export function ExplorerTree() {
         <div className="section-head">
           <span>탐색</span>
           <select className="input select small" value={moduleRule} onChange={(e) => setModuleRule(e.target.value as ModuleRule)}>
-            {(Object.keys(graph.modulesByRule) as ModuleRule[]).map((r) => (
+            {RULE_ORDER.filter((r) => graph.modulesByRule[r]).map((r) => (
               <option key={r} value={r}>
                 {RULE_LABEL[r]} 기준
               </option>

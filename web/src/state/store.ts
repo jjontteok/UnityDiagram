@@ -95,7 +95,8 @@ interface State {
   setNeighborRoot(id: string | null): void;
   toggleRole(r: UnityRole): void;
   toggleEdgeKind(k: EdgeKind): void;
-  select(s: Selection): void;
+  /** keepTab: 해설 글 안의 링크처럼 지금 탭을 유지할 때 */
+  select(s: Selection, opts?: { keepTab?: boolean }): void;
   setPanelTab(t: "detail" | "ai" | "help"): void;
   setStep(i: number): void;
   setPlaying(p: boolean): void;
@@ -139,7 +140,7 @@ export const useStore = create<State>((set, get) => ({
 
 
   loadGraph: (g) => {
-    const prefs = readLocal<{ moduleRule?: ModuleRule }>(`prefs:${g.projectRoot}`, {});
+    const prefs = readLocal<{ moduleRule?: ModuleRule }>(`prefs2:${g.projectRoot}`, {});
     const rule = prefs.moduleRule && g.modulesByRule[prefs.moduleRule] ? prefs.moduleRule : g.defaultModuleRule;
     guideAbort?.abort();
     set({
@@ -168,7 +169,7 @@ export const useStore = create<State>((set, get) => ({
 
   setModuleRule: (r) => {
     const g = get().graph;
-    if (g) writeLocal(`prefs:${g.projectRoot}`, { moduleRule: r });
+    if (g) writeLocal(`prefs2:${g.projectRoot}`, { moduleRule: r });
     set({ moduleRule: r, expanded: [] });
   },
 
@@ -208,6 +209,8 @@ export const useStore = create<State>((set, get) => ({
   ensureVisible: (nodeIds) => {
     const { graph, moduleRule, viewMode, roleFilter } = get();
     if (!graph) return;
+    // 검색·트리에서 클래스를 찾아가면 해설 화면(일부 클래스만 보임)에서 전체 다이어그램으로 돌아간다
+    if (get().narrationActive) set({ narrationActive: false, playing: false });
     const roles = new Set(nodeIds.map((id) => get().nodeById.get(id)?.unityRole).filter(Boolean) as UnityRole[]);
     const hiddenRoles = [...roles].filter((r) => !roleFilter[r]);
     if (hiddenRoles.length) set({ roleFilter: { ...roleFilter, ...Object.fromEntries(hiddenRoles.map((r) => [r, true])) } });
@@ -231,7 +234,7 @@ export const useStore = create<State>((set, get) => ({
   setNeighborRoot: (id) => set({ neighborRoot: id }),
   toggleRole: (r) => set({ roleFilter: { ...get().roleFilter, [r]: !get().roleFilter[r] } }),
   toggleEdgeKind: (k) => set({ edgeFilter: { ...get().edgeFilter, [k]: !get().edgeFilter[k] } }),
-  select: (s) => set({ selection: s, panelTab: s && !get().narrationActive ? "detail" : get().panelTab }),
+  select: (s, opts) => set({ selection: s, panelTab: s && !opts?.keepTab ? "detail" : get().panelTab }),
   setPanelTab: (t) => set({ panelTab: t }),
   setStep: (i) => {
     const s = get().sessions.find((x) => x.id === get().activeSessionId);
@@ -269,14 +272,10 @@ export const useStore = create<State>((set, get) => ({
           case "draft":
             patch(() => ({ draft: data }));
             break;
-          case "step": {
-            const before = get().sessions.find((s) => s.id === id);
-            // 사용자가 마지막 단계를 보고 있었다면 새 단계로 따라간다 (실시간 따라가기)
-            const following = get().activeSessionId === id && (before?.steps.length ?? 0) - 1 <= get().stepIndex;
+          case "step":
+            // 단계는 한꺼번에 도착하므로 따라가지 않고 1단계에 머문다
             patch((s) => ({ steps: [...s.steps, data], draft: undefined }));
-            if (following && get().narrationActive) set({ stepIndex: (before?.steps.length ?? 0) });
             break;
-          }
           case "finish":
             patch(() => ({ finish: data, status: "done", progress: undefined, draft: undefined }));
             break;

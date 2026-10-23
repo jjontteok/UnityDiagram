@@ -10,8 +10,7 @@ export function DetailPanel() {
   if (!selection) {
     return (
       <div className="detail empty">
-        <p className="muted">다이어그램에서 클래스, 모듈 또는 연결선을 클릭하면 상세 정보가 여기에 표시됩니다.</p>
-        <p className="muted small">상단의 <b>🧭 클래스 다이어그램 보기</b> 를 누르면 전체 구조를 단계별로 설명합니다.</p>
+        <Welcome />
         <HubList />
       </div>
     );
@@ -39,15 +38,62 @@ function NodeLink({ id }: { id: string }) {
   );
 }
 
+/** 아무것도 선택하지 않았을 때: 처음 보는 사람을 위한 시작 안내 */
+function Welcome() {
+  const graph = useStore((s) => s.graph)!;
+  const moduleRule = useStore((s) => s.moduleRule);
+  const sessions = useStore((s) => s.sessions);
+  const startGuide = useStore((s) => s.startGuide);
+  const setActiveSession = useStore((s) => s.setActiveSession);
+  const types = graph.nodes.filter((n) => n.unityRole !== "External").length;
+  const mods = modulesOf(graph, moduleRule).filter((m) => !m.parent && m.id !== "module:(External)").length;
+  const start = () => {
+    const done = sessions.find((s) => s.kind === "narrate" && s.status === "done");
+    if (done) setActiveSession(done.id);
+    else startGuide("narrate", {});
+  };
+  return (
+    <div className="welcome">
+      <div className="welcome-stats">
+        스크립트 <b>{graph.stats.scripts}</b>개 · 클래스 <b>{types}</b>개 · 모듈 <b>{mods}</b>개
+        {graph.plugins?.length ? (
+          <details className="plugins">
+            <summary className="muted small">
+              플러그인 폴더 {graph.plugins.length}개는 제외됨 (스크립트 {graph.plugins.reduce((s, p) => s + p.scripts, 0)}개)
+            </summary>
+            {graph.plugins.map((p) => (
+              <div key={p.path} className="small" title={p.reason}>
+                <span className="mono">{p.path}</span> <span className="muted">· {p.scripts}개 · {p.reason}</span>
+              </div>
+            ))}
+            <div className="muted small">포함하려면 프로젝트를 다시 열 때 "플러그인 폴더 자동 제외" 를 끄세요.</div>
+          </details>
+        ) : null}
+      </div>
+      <div className="section-head">처음 보는 프로젝트라면</div>
+      <ol className="welcome-steps">
+        <li>
+          <button className="btn primary" onClick={start}>🧭 구조 해설 시작</button>
+          <div className="muted small">프로젝트 구조를 단계별로 설명하고, 단계마다 관련 클래스만 그림으로 보여줍니다.</div>
+        </li>
+        <li>가운데 그림의 <b>모듈 상자를 더블클릭</b>하면 안에 있는 클래스가 보입니다.</li>
+        <li><b>클래스를 클릭</b>하면 여기에 하는 일과 연결 관계가 나오고, <b>📖 이 클래스 설명</b> 으로 자세히 볼 수 있습니다.</li>
+      </ol>
+    </div>
+  );
+}
+
 function HubList() {
   const graph = useStore((s) => s.graph)!;
   return (
     <div className="hubs">
-      <div className="section-head">허브 클래스 (많이 참조됨)</div>
+      <div className="section-head" title="다른 클래스가 많이 사용하는 클래스입니다. 먼저 읽어 두면 나머지 코드가 쉽게 읽힙니다.">
+        중심 클래스 (많이 쓰이는 순)
+      </div>
       {graph.metrics.hubs.map((id) => (
         <div key={id} className="hub-row">
           <NodeLink id={id} />
-          <span className="muted small">← {graph.metrics.fanIn[id]}</span>
+          <span className="muted small">{graph.metrics.fanIn[id]}곳에서 사용</span>
         </div>
       ))}
     </div>
@@ -138,8 +184,8 @@ function NodeDetail({ id }: { id: string }) {
           {n.tags.includes("singleton") && <span className="chip warn">⭐ 싱글톤/매니저</span>}
           {n.tags.includes("ui") && <span className="chip ui">UI</span>}
           {graph.metrics.cycles.some((c) => c.includes(n.id)) && <span className="chip warn">🔁 순환 참조</span>}
-          <span className="chip">fan-in {graph.metrics.fanIn[n.id] ?? 0}</span>
-          <span className="chip">fan-out {graph.metrics.fanOut[n.id] ?? 0}</span>
+          <span className="chip" title="이 클래스를 사용하는 클래스 수 (fan-in)">사용되는 곳 {graph.metrics.fanIn[n.id] ?? 0}</span>
+          <span className="chip" title="이 클래스가 사용하는 클래스 수 (fan-out)">사용하는 것 {graph.metrics.fanOut[n.id] ?? 0}</span>
         </div>
       </div>
 
@@ -213,7 +259,7 @@ function ModuleDetail({ id }: { id: string }) {
           .map((nid) => (
             <div key={nid} className="hub-row">
               <NodeLink id={nid} />
-              <span className="muted small">← {graph.metrics.fanIn[nid] ?? 0}</span>
+              <span className="muted small">{graph.metrics.fanIn[nid] ?? 0}곳에서 사용</span>
             </div>
           ))}
       </div>

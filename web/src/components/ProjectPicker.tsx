@@ -24,6 +24,7 @@ export function ProjectPicker() {
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [excludes, setExcludes] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [autoPlugins, setAutoPlugins] = useState(() => readPluginPref());
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -49,13 +50,14 @@ export function ProjectPicker() {
     setProgress({ label: "분석 준비 중…", done: 0, total: 1, phase: "scan" });
     const globs = excludes.split("\n").map((x) => x.trim()).filter(Boolean);
     writeLocal("excludes", globs);
+    writeLocal("autoExcludePlugins", autoPlugins);
     try {
       localStorage.setItem("lastPath", target);
     } catch {
       /* 무시 */
     }
     try {
-      const { jobId } = await api.startAnalyze(target, globs);
+      const { jobId } = await api.startAnalyze(target, globs, autoPlugins);
       subscribeAnalyze(jobId, async (event, data) => {
         if (event === "progress") setProgress(data);
         else if (event === "done") {
@@ -124,8 +126,12 @@ export function ProjectPicker() {
           GitHub 주소를 넣으면 코드·프리팹·씬 파일만 내려받아 분석합니다. 특정 브랜치나 하위 폴더는 <code>…/tree/브랜치/폴더</code> 형식으로 지정하세요.
           비공개 저장소는 이 PC 의 git 에 GitHub 로그인이 되어 있어야 합니다.
         </p>
+        <label className="plugin-check small">
+          <input type="checkbox" checked={autoPlugins} onChange={(e) => setAutoPlugins(e.target.checked)} disabled={busy} />
+          플러그인 폴더 자동 제외 (권장) — Plugins · ThirdParty · DOTween 처럼 설치한 에셋과 LICENSE·package.json 이 있는 폴더는 빼고, 직접 만든 스크립트만 보여줍니다
+        </label>
         <button className="link" onClick={() => setShowSettings(!showSettings)}>
-          {showSettings ? "▾" : "▸"} 제외할 경로 (glob)
+          {showSettings ? "▾" : "▸"} 직접 제외할 경로 (glob)
         </button>
         {showSettings && (
           <textarea className="input mono" rows={6} value={excludes} onChange={(e) => setExcludes(e.target.value)} disabled={busy} />
@@ -183,4 +189,12 @@ export function ProjectPicker() {
       )}
     </div>
   );
+}
+
+function readPluginPref() {
+  try {
+    return JSON.parse(localStorage.getItem("autoExcludePlugins") ?? "true") !== false;
+  } catch {
+    return true;
+  }
 }

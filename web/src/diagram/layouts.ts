@@ -38,6 +38,38 @@ export function removeOverlaps(cy: Core, margin = 10, maxPasses = 60) {
   cy.batch(() => nodes.forEach((n, i) => n.position(pos[i])));
 }
 
+/** 해설 단계의 작은 다이어그램: 흐름은 왼쪽→오른쪽 순서로, 나머지는 서로 가깝게 */
+export function guideLayout(flow: boolean, nodeCount: number): LayoutOptions {
+  if (flow) {
+    return {
+      name: "elk",
+      fit: true,
+      padding: 60,
+      animate: false,
+      elk: {
+        algorithm: "layered",
+        "elk.direction": "RIGHT",
+        "elk.layered.spacing.nodeNodeBetweenLayers": 70,
+        "elk.spacing.nodeNode": 30,
+        "elk.edgeRouting": "POLYLINE",
+      },
+    } as unknown as LayoutOptions;
+  }
+  return {
+    name: "fcose",
+    quality: "proof",
+    randomize: true,
+    animate: false,
+    fit: true,
+    padding: 60,
+    nodeRepulsion: () => 6500,
+    idealEdgeLength: () => (nodeCount > 8 ? 90 : 120),
+    nodeSeparation: 70,
+    packComponents: true,
+    tile: true,
+  } as unknown as LayoutOptions;
+}
+
 export function layoutFor(mode: ViewMode, nodeCount: number, animate: boolean, detail = false): LayoutOptions {
   // 상세 표시(상자가 큼)일 때는 더 넓게 벌려서 겹치지 않도록
   const spread = detail ? 2.2 : 1;
